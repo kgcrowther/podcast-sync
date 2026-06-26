@@ -51,7 +51,7 @@ Users may add custom device profiles in Settings. Each custom device profile inc
 
 ### File Type Warning
 If a user attempts to add a file to a playlist whose type is outside the supported list for any known device, the app displays a warning:
-> "This file type might not be supported or have limitations — please check the OpenSwim manual for details."
+> "This file type might not be supported or has limitations — please check the device's manual for details."
 
 ---
 
@@ -90,10 +90,11 @@ Users can follow podcasts by:
 Following a podcast does NOT automatically add it to any flow or playlist. It only makes it available for those purposes.
 
 ### Unfollowing Podcasts
-Users may unfollow a podcast at any time. If the podcast has an active flow or episodes in the playlist, the app warns the user before removing it.
+Users may unfollow a podcast at any time. If the podcast has an active flow or episodes in the playlist, the app warns the user before removing it. Unfollowing a podcast will automatically remove any flows associated with that podcast and any episodes associated with that podcast in the playlist.
 
 ### Episode Browsing
 When viewing a followed podcast:
+- Show the general podcast authors and description followed by some of the most recent episodes
 - Default view: most recent 20 episodes
 - **"Show 10 more"** button: loads 10 additional episodes
 - **"Show 50 more"** button: loads 50 additional episodes
@@ -148,8 +149,8 @@ In the event of a storage conflict (approaching 90% capacity), playlist items ta
 The playlist is a manually curated, ordered list of specific episodes and audio files the user wants on the device.
 
 ### Adding Items
-- From the episode browser: click an episode to add it to the playlist
-- From the filesystem: drag and drop any supported audio file into the playlist
+- From the episode browser: A **▶ Preview** button (plays the file in the system default audio player); A **+ Add to Playlist** button will add the episode to the playlist
+- From the filesystem: drag and drop any supported audio file into the playlist; the system will store the file location instead of the episode location
 
 ### Playlist View
 Each item in the playlist shows:
@@ -188,7 +189,7 @@ Before executing any sync:
 - If this would exceed 90% of the device's reported capacity → alert the user with a summary and do not proceed until the user resolves the conflict (by removing items from the playlist or adjusting flows)
 
 ### Sync Execution Order
-1. Detect mounted device and identify profile
+1. Detect mounted device and have user confirm profile
 2. Fetch latest RSS data for any podcasts with active flows
 3. Compute desired state
 4. Check storage threshold — alert and halt if exceeded
@@ -258,6 +259,15 @@ The app has a left sidebar with the following sections:
 - Search bar at the top to search followed podcasts
 - **+ Follow Podcast** button opens a search/add dialog
 - Clicking a podcast opens its episode browser
+
+### Episode browser
+- Description, author, imagry from the podcast followed by a list of the most recent episodes
+- Red indicator at top for podcasts with no new episodes in 45+ days
+- Warning indicator on podcasts with unreadable RSS feeds
+- List of most recent 10 episodes
+- A **▶ Preview** button (plays the file in the system default audio player); 
+- A **+ Add to Playlist** button will add the episode to the playlist
+- Buttons at the bottom of the list of episodes to show an additional 10 or an additional 50 episodes
 
 ### Flows View
 - List of all configured flows
