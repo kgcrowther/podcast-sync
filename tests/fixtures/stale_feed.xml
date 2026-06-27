@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"
+  xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd">
+  <channel>
+    <title>Stale Podcast</title>
+    <link>https://example.com/stale</link>
+    <description>A podcast that has not posted in over 45 days.</description>
+    <itunes:author>Old Author</itunes:author>
+
+    <item>
+      <title>Last Episode Ever</title>
+      <guid>guid-stale-001</guid>
+      <pubDate>Mon, 01 Jan 2024 10:00:00 +0000</pubDate>
+      <itunes:duration>30:00</itunes:duration>
+      <enclosure url="https://example.com/old.mp3" length="20000000" type="audio/mpeg"/>
+    </item>
+
+  </channel>
+</rss>

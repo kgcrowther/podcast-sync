@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"
+  xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"
+  xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel>
+    <title>Test Podcast</title>
+    <link>https://example.com</link>
+    <description>A podcast for testing SwimSync.</description>
+    <itunes:author>Test Author</itunes:author>
+    <itunes:image href="https://example.com/artwork.jpg"/>
+    <image>
+      <url>https://example.com/artwork.jpg</url>
+      <title>Test Podcast</title>
+      <link>https://example.com</link>
+    </image>
+
+    <item>
+      <title>Episode 3 - Most Recent</title>
+      <guid>guid-003</guid>
+      <pubDate>Mon, 02 Jun 2026 10:00:00 +0000</pubDate>
+      <itunes:duration>01:00:00</itunes:duration>
+      <enclosure url="https://example.com/ep3.mp3" length="50000000" type="audio/mpeg"/>
+    </item>
+
+    <item>
+      <title>Episode 2 - Middle</title>
+      <guid>guid-002</guid>
+      <pubDate>Mon, 05 May 2026 10:00:00 +0000</pubDate>
+      <itunes:duration>45:30</itunes:duration>
+      <enclosure url="https://example.com/ep2.mp3" length="40000000" type="audio/mpeg"/>
+    </item>
+
+    <item>
+      <title>Episode 1 - Oldest</title>
+      <guid>guid-001</guid>
+      <pubDate>Mon, 07 Apr 2026 10:00:00 +0000</pubDate>
+      <itunes:duration>1800</itunes:duration>
+      <enclosure url="https://example.com/ep1.mp3" length="30000000" type="audio/mpeg"/>
+    </item>
+
+  </channel>
+</rss>
