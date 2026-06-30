@@ -49,6 +49,7 @@ class PodcastSearchResult:
     itunes_id: int
     genre: Optional[str]
     episode_count: Optional[int]
+    description: Optional[str] = None
 
 
 @dataclass
@@ -152,6 +153,12 @@ def _parse_itunes_results(raw_results: list[dict]) -> list[PodcastSearchResult]:
         genres = item.get("genres", [])
         genre = genres[0] if genres else None
 
+        description = (
+            item.get("longDescription")
+            or item.get("description")
+            or None
+        )
+
         results.append(PodcastSearchResult(
             title=item.get("collectionName", "Unknown Title"),
             author=item.get("artistName", "Unknown Author"),
@@ -160,6 +167,7 @@ def _parse_itunes_results(raw_results: list[dict]) -> list[PodcastSearchResult]:
             itunes_id=itunes_id,
             genre=genre,
             episode_count=item.get("trackCount"),
+            description=description,
         ))
 
     return results
