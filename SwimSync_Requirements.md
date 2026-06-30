@@ -89,6 +89,14 @@ Users can follow podcasts by:
 
 Following a podcast does NOT automatically add it to any flow or playlist. It only makes it available for those purposes.
 
+### Previewing a Search Result
+Before following a podcast discovered through search, the user may preview it without leaving the Follow Podcast dialog:
+- Each search result row shows a **Details** button
+- Clicking **Details** expands an inline panel below the result row showing: artwork image, full description, episode count, and most recent episode title
+- Only one result may be expanded at a time; expanding a second result collapses the first
+- The **Follow** button within the expanded panel follows that podcast directly
+- The expanded panel uses only data already returned by the iTunes Search API — no additional network requests are made
+
 ### Unfollowing Podcasts
 Users may unfollow a podcast at any time. If the podcast has an active flow or episodes in the playlist, the app warns the user before removing it. Unfollowing a podcast will automatically remove any flows associated with that podcast and any episodes associated with that podcast in the playlist.
 
@@ -253,12 +261,35 @@ The app has a left sidebar with the following sections:
 - **Log** — view the activity log within the app
 
 ### Podcasts View
-- List of followed podcasts with name, artwork thumbnail, and most recent episode date
-- Red indicator on podcasts with no new episode in 45+ days
-- Warning indicator on podcasts with unreachable RSS feeds
-- Search bar at the top to search followed podcasts
-- **+ Follow Podcast** button opens a search/add dialog
-- Clicking a podcast opens its episode browser
+- Search bar at the top filters the displayed tiles by title or author
+- **+ Follow Podcast** button opens the Follow Podcast dialog
+- Followed podcasts are displayed as a scrollable list of tiles. Each tile contains:
+  - Artwork image (left side, fixed square size)
+  - Podcast title (bold, larger text)
+  - Author name (smaller, italic)
+  - Description excerpt (~20 words, truncated with ellipsis)
+  - Red dot indicator if no new episode in 45+ days
+  - Warning indicator if the RSS feed is currently unreachable
+  - **View Episodes** button — opens the episode browser for this podcast
+  - **Add Flow** button if no flow exists for this podcast; **Edit Flow** button if a flow is already configured. **Add Flow** navigates to the Add Flow UI pre-populated with this podcast's details. **Edit Flow** navigates to the flow configuration panel for the existing flow.
+- Right-clicking a tile shows a context menu with **Unfollow** (with cascade warning if a flow or playlist items exist)
+
+### Follow Podcast Dialog
+Opened by the **+ Follow Podcast** button. Contains two tabs: **Search** and **RSS URL**.
+
+**Search tab**
+- Query field and **Search** button (Return key also triggers search)
+- Results list. Each result row shows:
+  - Podcast title (bold, larger text)
+  - Author (smaller, italic, on a second line)
+  - **Details** button — expands an inline panel below the row showing artwork, full description, episode count, and most recent episode title; only one row may be expanded at a time
+- **Follow Selected** button, enabled only when a result row is selected; the expanded Details panel also contains a **Follow** button for that podcast
+
+**RSS URL tab**
+- URL input field and **Validate** button
+- After successful validation, displays: podcast title, episode count, most recent episode title
+- **Follow** button, enabled only after a successful validation
+- Any edit to the URL field resets the validation state
 
 ### Episode browser
 - Description, author, imagry from the podcast followed by a list of the most recent episodes
@@ -320,6 +351,7 @@ Appears when a supported device is mounted:
 | Device detection | `psutil` (monitors mounted volumes) |
 | Profile storage | JSON (`.swimsync` files) |
 | Logging | Python `logging` module to rotating file |
+| Artwork images | Fetched from URLs provided by the iTunes Search API (`artwork_url` on the `Podcast` model) using `requests`, decoded with `Pillow`, and converted to `QPixmap` for display. Images are fetched asynchronously (background `QThread`) so the UI does not block. Fetched artwork is cached in memory for the lifetime of the session; it is not persisted to disk. |
 
 ---
 
