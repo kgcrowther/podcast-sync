@@ -31,6 +31,7 @@ from swimsync.core.profile_manager import (
     set_last_profile_name,
 )
 from swimsync.models.profile import Profile
+from swimsync.ui.podcasts_view import PodcastsView
 from swimsync.utils.logger import get_logger
 
 log = get_logger(__name__)
@@ -88,10 +89,19 @@ class MainWindow(QMainWindow):
         self._device_monitor = device_monitor
 
         self._build_ui()
+        self._install_views()
 
     # ------------------------------------------------------------------
     # UI construction
     # ------------------------------------------------------------------
+
+    def _install_views(self) -> None:
+        podcasts_view = PodcastsView(
+            profile=self._profile,
+            on_profile_changed=self._on_profile_mutated,
+        )
+        podcasts_view.podcast_selected.connect(self._on_podcast_selected)
+        self.replace_view("Podcasts", podcasts_view)
 
     def _build_ui(self) -> None:
         self.setWindowTitle("SwimSync")
@@ -181,6 +191,22 @@ class MainWindow(QMainWindow):
         save_profile(self._profile)
         log.info("SwimSync closed")
         super().closeEvent(event)
+
+    # ------------------------------------------------------------------
+    # Profile mutation (called by views that modify the profile)
+    # ------------------------------------------------------------------
+
+    def _on_profile_mutated(self, profile: Profile) -> None:
+        self._profile = profile
+        save_profile(profile)
+
+    # ------------------------------------------------------------------
+    # View navigation callbacks
+    # ------------------------------------------------------------------
+
+    def _on_podcast_selected(self, podcast) -> None:
+        # TODO: replace_view("Podcasts", EpisodeBrowser(podcast)) and navigate
+        log.info(f"Podcast selected for episode browser: '{podcast.title}'")
 
     # ------------------------------------------------------------------
     # Device event handlers (always called on the main thread)

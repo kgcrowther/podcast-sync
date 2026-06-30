@@ -389,7 +389,7 @@ class FollowPodcastDialog(QDialog):
     # Tab lifecycle
     # ------------------------------------------------------------------
 
-    def _on_tab_changed(self, _index: int) -> None:
+    def _on_tab_changed(self, _: int) -> None:
         if self._worker and self._worker.isRunning():
             self._worker.quit()
 
