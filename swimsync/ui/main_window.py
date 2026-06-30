@@ -31,6 +31,7 @@ from swimsync.core.profile_manager import (
     set_last_profile_name,
 )
 from swimsync.models.profile import Profile
+from swimsync.ui.episode_browser import EpisodeBrowser
 from swimsync.ui.podcasts_view import PodcastsView
 from swimsync.utils.logger import get_logger
 
@@ -205,8 +206,18 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _on_podcast_selected(self, podcast) -> None:
-        # TODO: replace_view("Podcasts", EpisodeBrowser(podcast)) and navigate
-        log.info(f"Podcast selected for episode browser: '{podcast.title}'")
+        browser = EpisodeBrowser(
+            podcast=podcast,
+            profile=self._profile,
+            on_profile_changed=self._on_profile_mutated,
+        )
+        browser.back_requested.connect(self._on_browser_back)
+        self.replace_view("Podcasts", browser)
+        self.navigate_to("Podcasts")
+        log.info(f"Opened episode browser for '{podcast.title}'")
+
+    def _on_browser_back(self) -> None:
+        self._install_views()
 
     # ------------------------------------------------------------------
     # Device event handlers (always called on the main thread)
