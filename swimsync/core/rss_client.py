@@ -205,23 +205,35 @@ def fetch_feed(rss_url: str, max_episodes: int = 100) -> FeedResult:
     log.info(f"Fetching feed: {rss_url}")
 
     try:
-        parsed = feedparser.parse(rss_url)
+        if rss_url.startswith(("http://", "https://")):
+            # Use requests so macOS SSL certificates (via certifi) are respected.
+            # feedparser's built-in urllib fetch does not use the system cert store.
+            import requests as _req
+            resp = _req.get(rss_url, timeout=30)
+            resp.raise_for_status()
+            parsed = feedparser.parse(resp.content)
+        else:
+            parsed = feedparser.parse(rss_url)
     except Exception as exc:
-        log.error(f"Unexpected error fetching feed {rss_url}: {exc}")
-        return FeedResult(ok=False, episodes=[], error=str(exc))
+        msg = str(exc)
+        log.warning(f"Failed to fetch feed {rss_url}: {msg}")
+        return FeedResult(ok=False, episodes=[], error=msg)
 
-    # feedparser does not raise on network errors — check bozo and status
+    # feedparser does not raise on parse errors — check bozo flag
     if parsed.get("bozo") and not parsed.get("entries"):
         bozo_exc = parsed.get("bozo_exception", "Unknown error")
         msg = f"Feed unavailable or malformed: {bozo_exc}"
         log.warning(f"{msg} — {rss_url}")
         return FeedResult(ok=False, episodes=[], error=msg)
 
-    status = parsed.get("status", 200)
-    if status >= 400:
-        msg = f"HTTP {status} when fetching feed"
-        log.warning(f"{msg}: {rss_url}")
-        return FeedResult(ok=False, episodes=[], error=msg)
+    # Only check feedparser's status for non-HTTP fetches; HTTP errors are
+    # already handled above via raise_for_status().
+    if not rss_url.startswith(("http://", "https://")):
+        status = parsed.get("status", 200)
+        if status >= 400:
+            msg = f"HTTP {status} when fetching feed"
+            log.warning(f"{msg}: {rss_url}")
+            return FeedResult(ok=False, episodes=[], error=msg)
 
     # Extract feed-level metadata
     feed_meta = parsed.get("feed", {})
