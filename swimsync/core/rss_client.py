@@ -26,6 +26,13 @@ log = get_logger(__name__)
 # A feed is considered stale if its most recent episode is older than this
 STALE_FEED_DAYS = 45
 
+# Podcast hosts (e.g. Buzzsprout) reject the default python-requests UA with 403.
+# Identifying as a podcast client gets through their filters.
+_FEED_HEADERS = {
+    "User-Agent": "SwimSync/1.0 (Podcast sync; macOS)",
+    "Accept": "application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
+}
+
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -209,7 +216,7 @@ def fetch_feed(rss_url: str, max_episodes: int = 100) -> FeedResult:
             # Use requests so macOS SSL certificates (via certifi) are respected.
             # feedparser's built-in urllib fetch does not use the system cert store.
             import requests as _req
-            resp = _req.get(rss_url, timeout=30)
+            resp = _req.get(rss_url, headers=_FEED_HEADERS, timeout=30)
             resp.raise_for_status()
             parsed = feedparser.parse(resp.content)
         else:
