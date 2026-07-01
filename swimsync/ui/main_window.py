@@ -36,6 +36,7 @@ from swimsync.ui.episode_browser import EpisodeBrowser
 from swimsync.ui.flows_view import FlowsView
 from swimsync.ui.playlist_view import PlaylistView
 from swimsync.ui.podcasts_view import PodcastsView
+from swimsync.ui.profiles_view import ProfilesView
 from swimsync.utils.logger import get_logger
 
 log = get_logger(__name__)
@@ -104,6 +105,7 @@ class MainWindow(QMainWindow):
         self._install_flows_view()
         self._install_playlist_view()
         self._install_devices_view()
+        self._install_profiles_view()
 
     def _install_podcasts_view(self) -> None:
         podcasts_view = PodcastsView(
@@ -135,6 +137,13 @@ class MainWindow(QMainWindow):
             on_profile_changed=self._on_profile_mutated,
         )
         self.replace_view("Devices", devices_view)
+
+    def _install_profiles_view(self) -> None:
+        profiles_view = ProfilesView(
+            active_profile=self._profile,
+            on_profile_switched=self._on_profile_switched,
+        )
+        self.replace_view("Profiles", profiles_view)
 
     def _build_ui(self) -> None:
         self.setWindowTitle("SwimSync")
@@ -209,6 +218,15 @@ class MainWindow(QMainWindow):
             {d.drive_label for d in profile.device_configs}
         )
         log.info(f"Active profile changed to '{profile.name}'")
+
+    # ------------------------------------------------------------------
+    # Profile switch (called by ProfilesView when user picks a profile)
+    # ------------------------------------------------------------------
+
+    def _on_profile_switched(self, profile: Profile) -> None:
+        self.set_profile(profile)
+        self._install_views()
+        log.info(f"All views refreshed for profile '{profile.name}'")
 
     # ------------------------------------------------------------------
     # Window lifecycle
