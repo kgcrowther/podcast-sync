@@ -32,6 +32,7 @@ from swimsync.core.profile_manager import (
 )
 from swimsync.models.profile import Profile
 from swimsync.ui.episode_browser import EpisodeBrowser
+from swimsync.ui.flows_view import FlowsView
 from swimsync.ui.podcasts_view import PodcastsView
 from swimsync.utils.logger import get_logger
 
@@ -97,12 +98,25 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _install_views(self) -> None:
+        self._install_podcasts_view()
+        self._install_flows_view()
+
+    def _install_podcasts_view(self) -> None:
         podcasts_view = PodcastsView(
             profile=self._profile,
             on_profile_changed=self._on_profile_mutated,
         )
         podcasts_view.podcast_selected.connect(self._on_podcast_selected)
+        podcasts_view.add_flow_requested.connect(self._on_add_flow_requested)
+        podcasts_view.edit_flow_requested.connect(self._on_edit_flow_requested)
         self.replace_view("Podcasts", podcasts_view)
+
+    def _install_flows_view(self) -> None:
+        flows_view = FlowsView(
+            profile=self._profile,
+            on_profile_changed=self._on_profile_mutated,
+        )
+        self.replace_view("Flows", flows_view)
 
     def _build_ui(self) -> None:
         self.setWindowTitle("SwimSync")
@@ -217,7 +231,27 @@ class MainWindow(QMainWindow):
         log.info(f"Opened episode browser for '{podcast.title}'")
 
     def _on_browser_back(self) -> None:
-        self._install_views()
+        self._install_podcasts_view()
+
+    def _on_add_flow_requested(self, podcast) -> None:
+        self._flows_view_open_add(podcast)
+
+    def _on_edit_flow_requested(self, podcast) -> None:
+        self._flows_view_open_edit(podcast)
+
+    def _flows_view_open_add(self, podcast) -> None:
+        idx = NAV_SECTIONS.index("Flows")
+        widget = self._stack.widget(idx)
+        if isinstance(widget, FlowsView):
+            widget.open_add_flow(podcast)
+            self.navigate_to("Flows")
+
+    def _flows_view_open_edit(self, podcast) -> None:
+        idx = NAV_SECTIONS.index("Flows")
+        widget = self._stack.widget(idx)
+        if isinstance(widget, FlowsView):
+            widget.open_edit_flow(podcast)
+            self.navigate_to("Flows")
 
     # ------------------------------------------------------------------
     # Device event handlers (always called on the main thread)
