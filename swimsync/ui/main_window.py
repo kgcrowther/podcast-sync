@@ -36,6 +36,7 @@ from swimsync.ui.episode_browser import EpisodeBrowser
 from swimsync.ui.flows_view import FlowsView
 from swimsync.ui.playlist_view import PlaylistView
 from swimsync.ui.podcasts_view import PodcastsView
+from swimsync.ui.log_view import LogView
 from swimsync.ui.profiles_view import ProfilesView
 from swimsync.ui.sync_dialog import SyncDialog
 from swimsync.utils.logger import get_logger
@@ -108,6 +109,7 @@ class MainWindow(QMainWindow):
         self._install_playlist_view()
         self._install_devices_view()
         self._install_profiles_view()
+        self._install_log_view()
 
     def _install_podcasts_view(self) -> None:
         podcasts_view = PodcastsView(
@@ -146,6 +148,9 @@ class MainWindow(QMainWindow):
             on_profile_switched=self._on_profile_switched,
         )
         self.replace_view("Profiles", profiles_view)
+
+    def _install_log_view(self) -> None:
+        self.replace_view("Log", LogView())
 
     def _build_ui(self) -> None:
         self.setWindowTitle("SwimSync")
