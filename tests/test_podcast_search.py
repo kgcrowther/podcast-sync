@@ -197,12 +197,34 @@ def test_search_podcasts_caps_limit_at_200(mock_get):
 
 
 # ---------------------------------------------------------------------------
-# validate_rss_url — using local fixture
+# validate_rss_url
 # ---------------------------------------------------------------------------
 
-def test_validate_rss_url_valid():
-    """validate_rss_url returns ok=True for a valid local feed."""
-    result = validate_rss_url(SAMPLE_FEED.as_uri())
+def _make_feed_result(title="Test Podcast", n_episodes=3):
+    """Return a successful FeedResult stub with n_episodes fake episodes."""
+    from swimsync.core.rss_client import FeedResult
+    from swimsync.models.profile import Episode
+    episodes = [
+        Episode(
+            title=f"Episode {i}",
+            url=f"https://example.com/ep{i}.mp3",
+            publish_date="2026-01-01",
+            duration_seconds=None,
+            file_size_bytes=None,
+            guid=f"guid-{i}",
+        )
+        for i in range(1, n_episodes + 1)
+    ]
+    return FeedResult(ok=True, episodes=episodes, podcast_title=title)
+
+
+@patch("swimsync.core.rss_client.fetch_feed")
+def test_validate_rss_url_valid(mock_fetch):
+    """validate_rss_url returns ok=True when fetch_feed succeeds."""
+    mock_fetch.return_value = _make_feed_result()
+
+    result = validate_rss_url("https://example.com/feed.xml")
+
     assert result.ok is True
     assert result.title == "Test Podcast"
     assert result.episode_count == 3
@@ -219,6 +241,27 @@ def test_validate_rss_url_empty():
 def test_validate_rss_url_no_scheme():
     """validate_rss_url returns ok=False if URL lacks http/https scheme."""
     result = validate_rss_url("example.com/feed.xml")
+    assert result.ok is False
+    assert "http" in result.error.lower()
+
+
+def test_validate_rss_url_rejects_file_scheme():
+    """validate_rss_url rejects file:// to prevent local file reads."""
+    result = validate_rss_url("file:///etc/passwd")
+    assert result.ok is False
+    assert "http" in result.error.lower()
+
+
+def test_validate_rss_url_rejects_ftp_scheme():
+    """validate_rss_url rejects ftp:// and other non-http schemes."""
+    result = validate_rss_url("ftp://example.com/feed.xml")
+    assert result.ok is False
+    assert "http" in result.error.lower()
+
+
+def test_validate_rss_url_rejects_data_scheme():
+    """validate_rss_url rejects data: URIs."""
+    result = validate_rss_url("data:text/xml,<rss/>")
     assert result.ok is False
     assert "http" in result.error.lower()
 

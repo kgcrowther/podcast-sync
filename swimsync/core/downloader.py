@@ -40,6 +40,10 @@ _DOWNLOAD_HEADERS = {
     "User-Agent": "SwimSync/1.0 (Podcast sync; macOS)",
 }
 
+# Hard cap per download — no real podcast episode exceeds this.
+# Prevents a malicious feed from filling the user's disk.
+MAX_DOWNLOAD_BYTES = 2 * 1024 * 1024 * 1024  # 2 GB
+
 
 # ---------------------------------------------------------------------------
 # Result dataclass
@@ -137,6 +141,14 @@ def download_file(
                 if chunk:
                     f.write(chunk)
                     bytes_downloaded += len(chunk)
+                    if bytes_downloaded > MAX_DOWNLOAD_BYTES:
+                        msg = (
+                            f"Download aborted: {filename} exceeded size limit "
+                            f"({_fmt_bytes(MAX_DOWNLOAD_BYTES)})"
+                        )
+                        log.error(msg)
+                        safe_delete(local_path)
+                        return DownloadResult(ok=False, error=msg)
                     if progress_callback:
                         progress_callback(bytes_downloaded, total_bytes)
     except OSError as exc:

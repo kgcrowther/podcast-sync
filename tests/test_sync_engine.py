@@ -329,6 +329,19 @@ def test_safe_filename_falls_back_to_title():
     assert "My Episode" in result
 
 
+@pytest.mark.parametrize("adversarial_url", [
+    "https://evil.com/../../etc/passwd.mp3",
+    "https://evil.com/../secret.mp3",
+    "file:///etc/passwd.mp3",
+    "/absolute/path/evil.mp3",
+])
+def test_safe_filename_stays_inside_directory(adversarial_url, tmp_path):
+    """Filenames derived from adversarial URLs cannot escape the target directory."""
+    filename = _safe_filename("Episode", adversarial_url)
+    resolved = (tmp_path / filename).resolve()
+    assert resolved.parent == tmp_path.resolve()
+
+
 # ---------------------------------------------------------------------------
 # _sanitise
 # ---------------------------------------------------------------------------

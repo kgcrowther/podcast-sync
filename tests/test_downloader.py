@@ -21,6 +21,7 @@ from swimsync.core.downloader import (
     cleanup_downloads,
     get_downloaded_file_path,
     DownloadResult,
+    MAX_DOWNLOAD_BYTES,
 )
 from swimsync.models.sync_plan import SyncAction
 
@@ -226,6 +227,30 @@ def test_download_file_sends_user_agent(mock_get):
     _, kwargs = mock_get.call_args
     user_agent = kwargs.get("headers", {}).get("User-Agent", "")
     assert "SwimSync" in user_agent
+
+
+@patch("swimsync.core.downloader.requests.get")
+def test_download_file_aborts_when_content_exceeds_size_limit(mock_get):
+    """download_file returns ok=False and deletes partial file if response exceeds MAX_DOWNLOAD_BYTES."""
+    # Simulate a response that streams two chunks: one just under the limit,
+    # one that pushes the total over it.
+    over_limit = MAX_DOWNLOAD_BYTES + 1
+    # Two chunks: first chunk = limit bytes, second chunk = 1 byte → total exceeds limit
+    chunk1 = b"x" * MAX_DOWNLOAD_BYTES
+    chunk2 = b"x"
+    mock_response = MagicMock()
+    mock_response.raise_for_status.return_value = None
+    mock_response.headers = {}
+    mock_response.iter_content.return_value = iter([chunk1, chunk2])
+    mock_get.return_value = mock_response
+
+    result = download_file("https://example.com/huge.mp3", "huge.mp3")
+
+    assert result.ok is False
+    assert "size limit" in result.error.lower()
+    # Partial file must not be left on disk
+    downloads = dl.get_downloads_dir()
+    assert not (downloads / "huge.mp3").exists()
 
 
 # ---------------------------------------------------------------------------
