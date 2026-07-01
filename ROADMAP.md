@@ -45,14 +45,40 @@ Full v1 feature set as specified in SwimSync_Requirements.md:
 
 ---
 
+### Windows 11 support
+
+**Concept:** Extend SwimSync to run on Windows 11 with full feature parity. The Python and PyQt6 stack is already cross-platform; the work is confined to four specific areas where the code is currently macOS-specific.
+
+**What needs no changes:**
+PyQt6 (UI, dialogs, signals), feedparser, requests, psutil, certifi, pathlib, shutil, FAT32 filename sanitization, file picker and drag-and-drop, `QDesktopServices.openUrl()` for episode preview, profile export/import, RSS fetching, and the `python -m swimsync` entry point all work on Windows without modification.
+
+**Required changes:**
+
+1. **Device label detection** — The only non-trivial change. On macOS, the drive label is the last component of the mount point path (`/Volumes/SWIM PRO` → `"SWIM PRO"`). On Windows, USB volumes mount at a drive letter (`D:\`) and the volume label is stored in FAT32 metadata, retrieved separately. Confirmed via hardware testing: a Shokz OpenSwim Pro appears as `"SWIM PRO (D:)"` in Windows File Explorer, meaning the underlying volume label is `"SWIM PRO"` — identical to what macOS reports. The fix is a Windows branch in `get_mounted_devices()` that calls `ctypes.windll.kernel32.GetVolumeInformationW` for each drive letter to retrieve the label, then compares against watched labels as normal. No changes to the user-facing Devices configuration; users still enter `"SWIM PRO"` as the drive label on both platforms.
+
+2. **Application data paths** — `~/Library/Application Support/SwimSync/` is hardcoded in `file_utils.py`, `logger.py`, and `profile_manager.py`. On Windows the correct location is `%APPDATA%\SwimSync\`. Fix: centralize the path into a single platform-aware helper (using `sys.platform` + `os.environ["APPDATA"]`, or the `platformdirs` library) and have all three files import from it. This also resolves the existing structural issue of the same path being defined in three places.
+
+3. **`os.statvfs()` for device storage** — `sync_engine.py` uses `os.statvfs()` to read device capacity, which is POSIX-only and raises `AttributeError` on Windows. Replace with `shutil.disk_usage()`, which is cross-platform stdlib and already used elsewhere in the codebase via psutil.
+
+4. **"Open Log File" button** — `log_view.py` runs `subprocess.run(["open", "-R", path])` (macOS Finder). Windows equivalent is `subprocess.run(["explorer", "/select,", path])`. Needs a `sys.platform` check; without it the button silently does nothing on Windows.
+
+**Minor:**
+- User-Agent string `"SwimSync/1.0 (Podcast sync; macOS)"` in `rss_client.py` and `downloader.py` — change to `"SwimSync/1.0 (Podcast sync)"` for platform neutrality.
+- README installation instructions — add Windows venv activation (`venv\Scripts\activate`) and note that the command may be `python` rather than `python3` on Windows.
+
+**Estimated scope:** Low–Medium. ~1 focused development session for the code changes. The device label detection requires a Windows machine or VM for end-to-end testing; all other changes can be verified in the test suite by mocking `sys.platform` and the ctypes call.
+
+**Prerequisites:** A Windows 11 machine or VM for integration testing. No new runtime dependencies required if using ctypes (Windows built-in) for volume label lookup.
+
+---
+
 ## Deferred to v2
 
 Items from the original requirements document deferred out of v1 scope:
 
-- **Compiled `.app` distribution** — code-signed, distributable macOS app bundle (currently run from source via Python)
+- **Compiled `.app` / `.exe` distribution** — code-signed, distributable app bundle (currently run from source via Python)
 - **Launch at login / menu bar presence** — background daemon with menu bar icon
 - **iCloud profile sync** — sync profiles across multiple Macs automatically
 - **Smart playlists** — rule-based playlists (e.g. "unlistened episodes under 30 minutes")
 - **Audiobook support** — chapter-aware handling for audiobooks
 - **Automatic episode marking** — treat a file deleted from the device as "listened"
-- **Windows / Linux support**
