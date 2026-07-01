@@ -33,6 +33,7 @@ from swimsync.core.profile_manager import (
 from swimsync.models.profile import Profile
 from swimsync.ui.episode_browser import EpisodeBrowser
 from swimsync.ui.flows_view import FlowsView
+from swimsync.ui.playlist_view import PlaylistView
 from swimsync.ui.podcasts_view import PodcastsView
 from swimsync.utils.logger import get_logger
 
@@ -100,6 +101,7 @@ class MainWindow(QMainWindow):
     def _install_views(self) -> None:
         self._install_podcasts_view()
         self._install_flows_view()
+        self._install_playlist_view()
 
     def _install_podcasts_view(self) -> None:
         podcasts_view = PodcastsView(
@@ -117,6 +119,13 @@ class MainWindow(QMainWindow):
             on_profile_changed=self._on_profile_mutated,
         )
         self.replace_view("Flows", flows_view)
+
+    def _install_playlist_view(self) -> None:
+        playlist_view = PlaylistView(
+            profile=self._profile,
+            on_profile_changed=self._on_profile_mutated,
+        )
+        self.replace_view("Playlist", playlist_view)
 
     def _build_ui(self) -> None:
         self.setWindowTitle("SwimSync")
@@ -214,6 +223,13 @@ class MainWindow(QMainWindow):
     def _on_profile_mutated(self, profile: Profile) -> None:
         self._profile = profile
         save_profile(profile)
+        self._refresh_playlist_view()
+
+    def _refresh_playlist_view(self) -> None:
+        idx = NAV_SECTIONS.index("Playlist")
+        widget = self._stack.widget(idx)
+        if isinstance(widget, PlaylistView):
+            widget.refresh_profile(self._profile)
 
     # ------------------------------------------------------------------
     # View navigation callbacks
