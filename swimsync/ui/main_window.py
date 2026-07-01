@@ -31,6 +31,7 @@ from swimsync.core.profile_manager import (
     set_last_profile_name,
 )
 from swimsync.models.profile import Profile
+from swimsync.ui.devices_view import DevicesView
 from swimsync.ui.episode_browser import EpisodeBrowser
 from swimsync.ui.flows_view import FlowsView
 from swimsync.ui.playlist_view import PlaylistView
@@ -102,6 +103,7 @@ class MainWindow(QMainWindow):
         self._install_podcasts_view()
         self._install_flows_view()
         self._install_playlist_view()
+        self._install_devices_view()
 
     def _install_podcasts_view(self) -> None:
         podcasts_view = PodcastsView(
@@ -126,6 +128,13 @@ class MainWindow(QMainWindow):
             on_profile_changed=self._on_profile_mutated,
         )
         self.replace_view("Playlist", playlist_view)
+
+    def _install_devices_view(self) -> None:
+        devices_view = DevicesView(
+            profile=self._profile,
+            on_profile_changed=self._on_profile_mutated,
+        )
+        self.replace_view("Devices", devices_view)
 
     def _build_ui(self) -> None:
         self.setWindowTitle("SwimSync")
@@ -223,6 +232,9 @@ class MainWindow(QMainWindow):
     def _on_profile_mutated(self, profile: Profile) -> None:
         self._profile = profile
         save_profile(profile)
+        self._device_monitor.set_watched_labels(
+            {d.drive_label for d in profile.device_configs}
+        )
         self._refresh_playlist_view()
 
     def _refresh_playlist_view(self) -> None:
