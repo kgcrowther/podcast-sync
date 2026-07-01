@@ -218,10 +218,10 @@ def validate_rss_url(rss_url: str) -> FeedValidationResult:
     if not rss_url.strip():
         return FeedValidationResult(ok=False, error="RSS URL cannot be empty.")
 
-    if not rss_url.startswith(("http://", "https://", "file://")):
+    if not rss_url.startswith(("http://", "https://")):
         return FeedValidationResult(
             ok=False,
-            error="RSS URL must start with http://, https://, or file://",
+            error="RSS URL must start with http:// or https://",
         )
 
     log.info(f"Validating RSS URL: {rss_url}")
