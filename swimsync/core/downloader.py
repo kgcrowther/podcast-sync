@@ -34,6 +34,12 @@ CONNECT_TIMEOUT = 15
 # Timeout for reading data between chunks (seconds)
 READ_TIMEOUT = 60
 
+# Podcast hosts (e.g. Buzzsprout) reject the default python-requests UA with 403.
+# Identifying as a podcast client gets through their filters.
+_DOWNLOAD_HEADERS = {
+    "User-Agent": "SwimSync/1.0 (Podcast sync; macOS)",
+}
+
 
 # ---------------------------------------------------------------------------
 # Result dataclass
@@ -98,6 +104,7 @@ def download_file(
             url,
             stream=True,
             timeout=(CONNECT_TIMEOUT, READ_TIMEOUT),
+            headers=_DOWNLOAD_HEADERS,
         )
         response.raise_for_status()
     except requests.exceptions.Timeout:

@@ -200,6 +200,34 @@ def test_download_file_http_error(mock_get):
     assert "404" in result.error
 
 
+@patch("swimsync.core.downloader.requests.get")
+def test_download_file_http_403_forbidden(mock_get):
+    """download_file returns ok=False with clear message on 403 (e.g. Buzzsprout)."""
+    import requests as req
+    mock_response = MagicMock()
+    mock_response.raise_for_status.side_effect = req.exceptions.HTTPError(
+        "403 Client Error: Forbidden"
+    )
+    mock_get.return_value = mock_response
+
+    result = download_file("https://www.buzzsprout.com/episode.mp3", "episode.mp3")
+
+    assert result.ok is False
+    assert "403" in result.error
+
+
+@patch("swimsync.core.downloader.requests.get")
+def test_download_file_sends_user_agent(mock_get):
+    """download_file sends a SwimSync User-Agent so podcast hosts don't reject it."""
+    mock_get.return_value = make_mock_response(b"audio data")
+
+    download_file("https://example.com/ep.mp3", "ep.mp3")
+
+    _, kwargs = mock_get.call_args
+    user_agent = kwargs.get("headers", {}).get("User-Agent", "")
+    assert "SwimSync" in user_agent
+
+
 # ---------------------------------------------------------------------------
 # download_action — URL-based
 # ---------------------------------------------------------------------------
