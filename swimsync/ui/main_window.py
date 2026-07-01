@@ -37,6 +37,7 @@ from swimsync.ui.flows_view import FlowsView
 from swimsync.ui.playlist_view import PlaylistView
 from swimsync.ui.podcasts_view import PodcastsView
 from swimsync.ui.profiles_view import ProfilesView
+from swimsync.ui.sync_dialog import SyncDialog
 from swimsync.utils.logger import get_logger
 
 log = get_logger(__name__)
@@ -92,6 +93,7 @@ class MainWindow(QMainWindow):
                 on_device_disconnected=self._sig_device_disconnected.emit,
             )
         self._device_monitor = device_monitor
+        self._sync_dialog: SyncDialog | None = None
 
         self._build_ui()
         self._install_views()
@@ -308,10 +310,21 @@ class MainWindow(QMainWindow):
             f"Device connected: '{device.drive_label}' "
             f"at {device.mount_point}"
         )
-        # TODO: show SyncDialog(device, self._profile, parent=self)
+        self._sync_dialog = SyncDialog(
+            device=device,
+            active_profile=self._profile,
+            parent=self,
+        )
+        self._sync_dialog.sync_completed.connect(
+            lambda: log.info("Sync completed successfully")
+        )
+        self._sync_dialog.exec()
+        self._sync_dialog = None
 
     def _on_device_disconnected(self, label: str) -> None:
         log.info(f"Device disconnected: '{label}'")
+        if self._sync_dialog is not None:
+            self._sync_dialog.notify_device_disconnected(label)
 
 
 # ---------------------------------------------------------------------------
