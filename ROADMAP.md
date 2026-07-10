@@ -80,7 +80,11 @@ PyQt6 (UI, dialogs, signals), feedparser, requests, psutil, certifi, pathlib, sh
 
 #### The irreducible constraint
 
-As long as Shokz uses USB, some agent must run on the machine that physically connects the device. A cloud server or mobile app cannot detect a USB mount. The desktop client is therefore never fully eliminated under any architecture — it becomes a background daemon with no UI rather than a full application. If Shokz ever adds Bluetooth or WiFi transfer, this constraint disappears and a mobile app could sync directly to the device without any desktop involvement. That would be a genuinely transformative shift worth watching.
+As long as Shokz devices only expose bulk file storage over USB, some device with a USB host port must physically connect to them to sync files. A cloud server cannot detect a USB mount, so the desktop daemon in Option A below is unavoidable for a *cloud* architecture.
+
+A mobile app is not limited the same way, though: modern iOS and Android devices can mount and write to a USB mass-storage volume directly over a cable — confirmed feasible below. So a mobile app genuinely can eliminate the desktop/Mac requirement, with no change needed from Shokz, provided a wired connection is used. See **[Mobile companion app — wired sync, no Mac required](#mobile-companion-app-iosandroid--wired-sync-no-mac-required)** below.
+
+Neither Bluetooth nor WiFi offers a wireless shortcut to the same goal. The OpenSwim Pro is confirmed to have a Bluetooth radio (used for live audio streaming in its dual-mode design), but Shokz explicitly states file transfer is not supported over that connection — see **[Wireless (Bluetooth) file sync](#wireless-bluetooth-file-sync--not-supported-by-the-hardwarefirmware)** below. And the device's FCC filing confirms it has no WiFi radio at all — see **[WiFi connectivity](#wifi-connectivity--no-radio-present-confirmed-via-fcc-filing)** below. A fully cable-free mobile sync therefore remains out of reach unless Shokz changes either of these in future hardware.
 
 ---
 
@@ -248,6 +252,109 @@ The simplest possible answer: SwimSync already exports and imports `.swimsync` p
 2. **If proceeding with cloud:** start with **Option C (Supabase)** and keep audio out of the cloud entirely. Build the desktop daemon first (reusing existing Python core), then the web UI, then mobile if needed.
 3. **If staying personal/small circle:** **Option D** (local-first + sync) is substantially less work, preserves the current investment, and can be shipped much sooner. It does not preclude moving to Option C later — the data model is compatible.
 4. **Do not build authentication from scratch** under any scenario. Use a managed identity provider (Supabase Auth, Firebase Auth, Auth0, or Apple/Google Sign-In). Authentication security is a specialist domain and the failure modes are severe.
+
+---
+
+### Device battery status ("time to charge" indicator)
+
+**Concept:** When a device is mounted and the profile-selection dialog appears, show the device's current battery charge alongside a recommendation of how long to charge it. Extend the idea to a general capability so that other MP3-player devices users add as custom device profiles could eventually support the same indicator.
+
+**Feasibility findings (empirically tested 2026-07-08 against a physical Shokz OpenSwim Pro, mounted as `SWIM PRO`):**
+- The charging/sync cable is a proprietary 4-pin magnetic connector, but once connected it presents to macOS as a plain USB mass-storage device — same as any flash drive.
+- `system_profiler SPUSBDataType -detailLevel full` and `ioreg -p IOUSB -l` both show the storage interface identifying only as a generic **Genesys Logic, Inc. "USB Storage"** bridge chip (`idVendor` 0x05E3 / `idProduct` 0x0761, `iProduct` = `"USB Storage"`) — a commodity USB-to-flash bridge used in countless unrelated flash drives and card readers, not a Shokz-custom controller. There is no Shokz-branded string anywhere in the descriptor, no vendor-specific interface, and no battery/capacity-related key anywhere in the IORegistry node for this device.
+- No hidden status/config file exists at the root of the mounted volume — `ls -la "/Volumes/SWIM PRO"` shows only the audio files SwimSync placed there plus standard FAT32/macOS housekeeping entries (`.Spotlight-V100`, `.fseventsd`, `System Volume Information`).
+- **Correction after further testing:** the OpenSwim Pro is a confirmed dual-mode device — it has a Bluetooth 5.4 radio for live audio streaming (switchable to standalone MP3 mode via a 2-second Volume+/Volume− hold, or the Shokz app), and the Shokz companion app *does* show a battery reading, over that Bluetooth connection. This does not change the conclusion below for SwimSync's current integration path — the USB-mounted-drive path and the Bluetooth path are architecturally separate (see [Wireless (Bluetooth) file sync](#wireless-bluetooth-file-sync--not-supported-by-the-hardwarefirmware) below) — but it does mean battery telemetry isn't absent from the device entirely, only absent from the specific access path SwimSync uses today.
+- macOS's `IOPowerSources` / `ioreg BatteryPercent` mechanism is populated for Bluetooth accessories and internal battery hardware, not for USB mass-storage devices — there is no OS-level hook a userspace app could read via the mounted-drive path, even though the same battery value is reachable over Bluetooth by Shokz's own app.
+- **Conclusion:** a real battery percentage is not obtainable from the OpenSwim Pro through the mounted-USB-drive path any macOS application (including SwimSync) uses today. The storage bridge chip is off-the-shelf with no vendor-added command, and a raw-SCSI-passthrough approach would require an undocumented vendor command with no evidence it exists. Bluetooth is a real, working alternative path to the same data (proven by Shokz's own app), but reading it would require reverse-engineering Shokz's proprietary GATT service/characteristic (no public SDK exists) — a project on the scale of the mobile companion app analysis below, not a small addition to the current desktop sync flow.
+
+**Implementation approach — reframed around the "device stays silent" constraint:**
+
+1. **Self-reported charge state (ships immediately, no hardware dependency)**
+   - Add a lightweight control to the Sync Dialog's `READY` phase (`sync_dialog.py`): "Full / Partial / Low — not sure," defaulting to "not sure."
+   - Session-only state — not persisted into the `Profile`/`.swimsync` file, since it's a momentary fact about hardware, not portable profile data.
+   - If the user picks "Low," show a one-line, non-blocking reminder: "Consider charging before your next swim."
+
+2. **Usage-based heuristic estimate (soft-state, still no hardware dependency)**
+   - Two new optional fields on `DeviceConfig`: `last_charged_at: Optional[str]` (ISO-8601, user-confirmed) and `rated_playback_hours: Optional[float]` (from the device manual — OpenSwim Pro is rated ~10 hours).
+   - Sync Dialog asks "Did you just charge this device?" the first time it connects after a sync; answering Yes stamps `last_charged_at = now`.
+   - On later connects, show an estimate ("~X hours of playback likely remaining") derived from elapsed time vs. `rated_playback_hours`, clearly labeled as an estimate. Confidence should decay with time: past roughly 1.5× the rated window with no reconfirmation, fall back to "Unknown — check the device's LED indicator" rather than asserting a number that's probably wrong.
+
+3. **True hardware probe — a documented stretch path, not planned work**
+   - If a future device (or firmware revision) does expose battery telemetry, the architecture shouldn't need to change to add it: a `battery_probe.py` module defining a `BatteryProbe` protocol (`read(mount_point) -> Optional[BatteryStatus]`), registered by **USB vendor/product ID**, not drive label. This distinction matters for correctness, not just tidiness — `drive_label` is user-editable text (Requirements §3 allows typing it manually), so two unrelated devices could share a label, while VID/PID is the one reliable hardware fingerprint. Capturing VID/PID is new work: `device_monitor.get_mounted_devices()` currently only reads `psutil.disk_partitions()`, which exposes mount point and filesystem type but not the parent USB device — mapping a BSD disk node back to its USB descriptor needs a `system_profiler SPUSBDataType` shell-out or an IOKit registry walk keyed by `IOBSDName`.
+   - Any device without a registered VID/PID (every device today) silently falls back to the self-report/heuristic path above — the same graceful-degradation pattern already used for the missing-ffmpeg case in the playback-speed entry above.
+
+**Key tradeoffs:**
+- The headline ask (a real battery percentage) cannot be delivered for the OpenSwim Pro; this needs to be set as an expectation up front rather than discovered after building UI around it.
+- The self-report control adds a small amount of friction to every sync's `READY` phase; keeping the default non-committal and never blocking keeps this cheap.
+- The heuristic estimate is only as good as its inputs (rated hours, honesty of the "just charged" confirmation) and will visibly diverge from reality in edge cases (partial charges, device left powered on between syncs) — hence the explicit decay-to-"Unknown" behavior rather than a persistently confident number.
+- Generalizing via VID/PID adds a new detection dependency to `device_monitor.py` that doesn't exist today; it's a small addition, but it's still a new external-process/IOKit call in a module that currently only calls `psutil`.
+
+**Estimated scope:** Low for the self-report + heuristic path — roughly half a development session: one new Sync Dialog control, two new optional `DeviceConfig` fields, no new modules. The hardware-probe extension point is a few hours to scaffold but isn't worth building until a specific device with a real, working battery-read mechanism is identified; a registry with zero working probes in it is speculative work with no payoff.
+
+**Prerequisites:** None for the self-report/heuristic path. The hardware-probe path needs a specific device confirmed (via vendor documentation or successful reverse engineering) to expose battery telemetry over the mounted-drive path — none qualify today. A Bluetooth-based probe is known to be *possible* in principle (Shokz's own app does it for the OpenSwim Pro) but is a separate, much larger project — see the mobile companion app analysis below, since it would need the same GATT reverse-engineering effort as any other Bluetooth capability on this device.
+
+---
+
+### Wireless (Bluetooth) file sync — not supported by the hardware/firmware
+
+**Concept prompting this analysis:** The OpenSwim Pro is a confirmed dual-mode device: a Bluetooth 5.4 radio streams live audio from a phone during normal use, and a 2-second Volume+/Volume− hold (or the Shokz app) switches it to standalone MP3 mode, playing files from onboard flash — which is what makes it usable underwater, where Bluetooth can't propagate. Because both modes live on one device, it's natural to ask whether SwimSync could sync podcast files onto the device's onboard storage over the existing Bluetooth connection instead of the physical cable — which would let a mobile app sync while out on a run, ready for the pool later without ever touching a Mac.
+
+**Findings:**
+- Shokz's own documentation states directly: *"OpenSwim Pro does not support Bluetooth music transfer. Instead, to import songs to OpenSwim Pro, connect the headphones to your computer using the magnetic charging cable."* This is a stated limitation, not an undocumented gap — on a product whose companion app already implements a fairly capable Bluetooth control surface (mode switching, EQ, multipoint pairing, battery status, firmware OTA updates).
+- The two playback modes are architecturally separate pipelines, not two writers sharing one storage buffer: Bluetooth mode streams audio live from the phone straight to the DAC, never touching flash; MP3 mode has the device's own MCU read files directly off onboard flash. The flash is exposed externally only through the physical cable, as a plain USB mass-storage volume via a commodity Genesys Logic bridge chip (the same chip identified in the battery investigation above) — nothing suggests that chip is reachable from the Bluetooth radio at the hardware-bus level.
+- Firmware OTA over Bluetooth does prove *some* write path exists from the Bluetooth SoC into flash — but that's a narrow, vendor-controlled binary update mechanism aimed at a dedicated firmware partition, not a general filesystem write API, and Shokz's statement confirms they did not repurpose or expose it for user audio content.
+
+**Why this isn't worth pursuing:** Unlike the battery investigation — where "not reachable over USB" turned out to mean "reachable over a different, working channel instead" — this is a vendor-stated, deliberate absence on a device where Shokz has clearly already invested in Bluetooth tooling. Working around it would require confirming bus-level hardware access from the Bluetooth SoC to the flash chip (realistically needs a teardown/datasheet — destructive, and not available for hardware in daily use), reverse-engineering a protocol that doesn't currently exist in the firmware (not merely discovering a hidden-but-present one), and quite possibly flashing custom firmware to add the capability — closer to jailbreaking the device than writing an app, with real risk of bricking hardware and no guarantee of success.
+
+**Conclusion:** Not feasible, and not worth treating as a research spike. Revisit only if Shokz ships an SDK or firmware update that adds Bluetooth file transfer.
+
+---
+
+### WiFi connectivity — no radio present, confirmed via FCC filing
+
+**Concept prompting this analysis:** Some SoCs that provide Bluetooth also bundle WiFi on the same die, with the antenna and RF front-end already present for other reasons. A Garmin Forerunner 245 Music auto-connects to a previously-configured WiFi network when plugged in to charge, syncing podcasts in the background with no phone needed — the question is whether the OpenSwim Pro has similar (even if undocumented) WiFi hardware and a CLI or protocol to configure it.
+
+**Findings:**
+- The OpenSwim Pro's FCC filing (**FCC ID 2BCD6-S710**, Shokz Singapore Pte. Ltd. — the only FCC filing for this product) lists exactly two radio grants, both operating solely in the 2402–2480 MHz band (the Bluetooth ISM band) at 5.6 mW and 6.9 mW conducted output. **There is no 802.11/WiFi equipment-class grant anywhere in the filing.** Since intentional radiators sold in the US are legally required to be FCC-certified, the absence of a WiFi grant is about as close to definitive as public evidence gets: this device does not contain a legally-operating WiFi radio. (Source: [fccid.io/2BCD6-S710](https://fccid.io/2BCD6-S710).)
+- Cross-checked every Shokz filing under grantee code 2BCD6 (OpenRun, OpenRun Pro, OpenRun Pro 2, OpenComm, OpenComm2, OpenFit 2, OpenDots One, OpenMeet) — every Shokz product is Bluetooth-only. This isn't a one-off omission on the OpenSwim Pro; Shokz has no WiFi hardware, firmware, or cloud-sync infrastructure anywhere in its product line.
+- Empirical test performed live against the physical device (connected and charging): a WiFi scan (`airport -s`) from the Mac showed only pre-existing household/neighbor networks — no new SSID or access point associated with the device appeared. This rules out the device broadcasting a setup/provisioning AP the way some IoT devices do during pairing, which would show up in a scan even without the device being paired to anything.
+- The 5.6–6.9 mW conducted output levels are consistent with a Bluetooth Low Energy/Classic radio; even low-power WiFi implementations typically transmit at higher power, and would in any case need their own distinct FCC grant.
+
+**On the "unpublished CLI" idea specifically:** Setting the FCC finding aside, "an unpublished CLI to configure WiFi" presupposes a WiFi stack (network manager, DHCP client, credential storage) already exists in firmware and is merely undocumented — the way undocumented diagnostic shells sometimes exist on routers or NAS boxes. That's not this situation: there's no radio hardware to drive such a stack in the first place. This isn't a hidden-feature question; it would require Shokz to have populated an antenna and RF front-end for a radio class they never certified this product for — new hardware, not hidden firmware.
+
+**Comparison with the Garmin Forerunner 245 Music:** Garmin's charge-and-sync behavior rides on infrastructure built for reasons that have nothing to do with music — Garmin Connect (a cloud platform), and WiFi hardware already justified by GPS-heavy product needs (activity upload, maps, software updates) across a large, diverse catalog. Shokz has no equivalent on any product: no cloud platform, no other WiFi hardware anywhere in the lineup, and — per the FCC filing — no WiFi silicon on this specific device. There's no existing infrastructure here to extend.
+
+**Conclusion:** Not feasible on current OpenSwim Pro hardware, and unlike the Bluetooth file-transfer question, this isn't a reverse-engineering problem — it's a confirmed hardware absence from a primary regulatory source, corroborated by a live scan. There is no unpublished WiFi CLI to find, because there is no WiFi radio to configure. Revisit only if a future OpenSwim Pro hardware revision ships with a new FCC filing that includes an 802.11 grant.
+
+**Estimated scope:** Not applicable — no engineering work can substitute for missing radio hardware; this closes the WiFi avenue for the current device generation.
+
+**Prerequisites:** None. To verify independently, the primary source is the grant table and exhibits at [fccid.io/2BCD6-S710](https://fccid.io/2BCD6-S710).
+
+---
+
+### Mobile companion app (iOS/Android) — wired sync, no Mac required
+
+**Concept:** Since Bluetooth transfer is ruled out, the practical way to free the sync workflow from requiring a Mac is a native mobile app implementing the same feature set as the desktop app (follow podcasts, configure flows, curate a playlist, sync) that talks to the device over the *same physical cable*, plugged into the phone instead of a computer — reusing the identical USB mass-storage protocol already in use today, just with a different host.
+
+**Why this is newly worth taking seriously:** The "Cloud / mobile architecture" analysis above originally framed USB as an *irreducible constraint requiring a desktop*, assuming "mobile app" meant a configuration-only companion talking to a cloud or desktop backend. That framing was too strong. Modern phones can genuinely mount and read/write a FAT32 USB mass-storage device directly:
+- **Android**: native support via the Storage Access Framework (`ACTION_OPEN_DOCUMENT_TREE` grants a persistent URI to an attached USB drive; `DocumentFile`/`ContentResolver` then read/write it) and the USB Host API (`UsbManager`, with `ACTION_USB_DEVICE_ATTACHED` broadcast intents for attach detection) — this is how Android file-manager apps already browse USB flash drives over an OTG cable/adapter, no root required.
+- **iOS**: supported since iOS 13's "USB drives in Files app" feature. USB-C iPhones (iPhone 15 and later) mount a FAT32 drive directly; Lightning iPhones need Apple's Lightning-to-USB 3 Camera Adapter in addition to the Shokz cable. Third-party apps get read/write access via `UIDocumentPickerViewController` — the same document-provider mechanism the Files app itself uses — with no MFi certification required.
+
+**Implementation approach:**
+- The current architecture's separation of UI-free core logic (`sync_engine.py`, `downloader.py`, `profile_manager.py`) from the PyQt6 UI pays off here as an *algorithm to port*, not literal shared code — Python isn't a first-class citizen in iOS/Android app-store distribution, so this would be a ground-up native implementation (Swift/SwiftUI + Kotlin/Jetpack Compose, or one Flutter/React Native codebase with platform channels for the USB/file-picker integration) that reimplements the same logic: flow evaluation (most-recent-N ∪ last-X-days union), filename+byte-size comparison, the 90% storage-threshold check, RSS fetching, iTunes search.
+- Profile storage should stay `.swimsync`-compatible JSON, so a profile exported from the desktop app imports cleanly into the mobile app and vice versa — this was already flagged as a strength of the current data model in the cloud/mobile analysis's "how v1 decisions affect future options" table, and it applies just as well here.
+- Device-attach detection differs meaningfully by platform: Android can listen for `ACTION_USB_DEVICE_ATTACHED`, similar in spirit to how `device_monitor.py` polls for a mount today; iOS has no equivalent background-attach API for third-party apps, so the user must explicitly open the document picker to connect the device each time rather than getting the Mac app's automatic "device just got plugged in" dialog. This is a real UX regression specific to iOS, not a limitation of the concept.
+- No cloud, no authentication, no Bluetooth reverse-engineering — this sidesteps essentially every hard problem raised in the cloud/mobile analysis's "upfront decisions" section, because sync stays entirely local and device-initiated, exactly like the desktop app today.
+
+**Key tradeoffs:**
+- Substantial engineering project — two native codebases, or one cross-platform app with platform-specific USB/file-provider glue — comparable in scope to cloud Option A's "web/mobile UI is ground-up new work," but without Option A's authentication/infrastructure burden.
+- iOS's lack of background USB-attach detection means sync is always user-initiated there (open app, tap "connect device"), never automatic like the desktop app's polling.
+- Needs the right cable/adapter on the phone side: USB-C-to-USB-C for USB-C iPhones and most modern Android phones, or the Lightning Camera Adapter for older iPhones — no new adapter needed for the OpenSwim Pro's own cable, since it already terminates in a standard USB connector today.
+- Doesn't preclude a future cloud layer — compatible with the local-first Option D/E paths in the cloud/mobile analysis; a Mac becomes optional rather than required, which is the actual goal here.
+
+**Estimated scope:** High — a full mobile port of the podcast/flow/playlist/sync feature set, in a new language/platform, is comparable to building the desktop app's core and UI a second time. Meaningfully smaller than cloud Option A, though, since there's no backend, no auth, and no multi-device conflict resolution to design.
+
+**Prerequisites:** A USB-C-to-USB-C cable (most Android phones, iPhone 15+) or a Lightning-to-USB 3 Camera Adapter (older iPhones) to connect the OpenSwim Pro's existing cable to the phone — no new hardware dependency beyond what's already used with the Mac.
 
 ---
 
