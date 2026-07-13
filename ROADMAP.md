@@ -391,6 +391,43 @@ The simplest possible answer: SwimSync already exports and imports `.swimsync` p
 
 ---
 
+### Audiobook support
+
+**Scope note:** This analysis assumes the user already has audio files for a book in a DRM-free, personally-usable form (ripped from a CD, purchased DRM-free from a retailer such as Libro.fm or Chirp, a public-domain recording from LibriVox, etc.) sitting in a local folder. SwimSync's role starts at "here's a folder of chapter files" — it does not acquire, decrypt, or otherwise process content from any storefront or DRM-protected source. That boundary is deliberate and non-negotiable for this feature.
+
+**Concept:** Model an audiobook as a fixed, ordered sequence of chapter files and let SwimSync keep "the next few chapters" on the device automatically as the user progresses — the same value proposition a Flow provides for podcasts, but for a fundamentally different content shape.
+
+**Why audiobooks don't fit the existing `Flow` model:** A podcast is an open-ended, ever-growing stream where "most recent N" or "last X days" makes sense because new episodes keep arriving and old ones age out. An audiobook is the opposite: a **fixed, finite, strictly-ordered** set of chapters that never changes after import, and the natural consumption pattern is sequential progress through a single position, not recency. Neither of `Flow`'s existing criteria (`most_recent_count`, `last_x_days`) has a sensible audiobook interpretation — there's no publish date to be "recent" relative to. This needs a different selection primitive entirely: a forward-looking window from a progress marker, not a backward-looking window from "now."
+
+**Proposed data model:** New types structurally parallel to `Podcast`/`Episode`, but without any feed/staleness concept, since there's no RSS feed to poll and no "new chapter" ever appears after import:
+- `Audiobook`: `title`, `author`, `narrator`, `source_folder_path`, `last_completed_chapter: int` (progress marker, 0 if unstarted).
+- `Chapter`: `book_title` (or a book ID), `chapter_number: int`, `title`, `file_path`, `duration_seconds`, `file_size_bytes`.
+- Import flow: user selects a folder (drag-and-drop or file picker, reusing the exact mechanism already built for local-file playlist items — `PlaylistItem.local_file_path`). SwimSync orders the files first by embedded ID3/M4B track/chapter metadata if present, falling back to a natural sort of filenames. This ordering must be deterministic and stable, because it directly determines on-device playback order (see below).
+- A parallel `AudiobookFlow`-style rule: `audiobook_title`, `chapters_ahead: int` — the desired chapter range is `[last_completed_chapter + 1, last_completed_chapter + chapters_ahead]`, computed fresh at each sync exactly like `Flow` is today, just with a different window function.
+
+**Progress tracking — evaluating the three approaches raised:**
+
+1. **Device-reported "listened" state (inferred from files disappearing from the device) — not reliable, ruled out.** This was already on the "Deferred to v2" list as a speculative idea ("Automatic episode marking"), and this investigation's own earlier findings rule it out concretely rather than just leaving it speculative: `sync_engine._get_device_contents()` and the OpenSwim Pro's own USB mass-storage interface expose nothing but a flat FAT32 file listing — no play count, no last-played timestamp, no listened flag of any kind (confirmed empirically via `ls -la` on the mounted volume during the battery investigation earlier in this roadmap — only the audio files SwimSync itself wrote were present, no device-written metadata). A file's disappearance from the device is inherently ambiguous — it could mean "the user finished this chapter," "the user manually deleted it for space," or "SwimSync's own last sync already removed it as part of a normal flow recompute" — and SwimSync cannot distinguish these cases from the mounted-drive path alone. This isn't a missing feature to build; it's the same hardware/firmware ceiling already hit in the battery and Bluetooth-file-transfer investigations above. At most, an unexplained disappearance could drive a soft prompt ("Chapter 4 is no longer on your device — mark it as finished?"), never an authoritative signal.
+
+2. **Manual "mark chapter complete" — recommended.** Add a per-chapter completion control in a new Audiobooks view, consistent with the Requirements' existing playlist philosophy that items are "never silently removed... only the user can remove them" (§7). This needs no information from the device at all — it's purely app-side state living in the `Profile`, the same trust model the rest of SwimSync already uses. A "mark chapters 1–N as done" bulk action mitigates the main downside (forgetting to update progress stalls the forward window rather than corrupting anything — the sync simply keeps re-offering the same unfinished chapters, which is a safe failure mode).
+
+3. **Delegate chapter navigation entirely to the Shokz app, SwimSync just delivers the whole book — doesn't actually solve the problem on current hardware.** This was worth checking against what's already been established empirically about this device rather than assumed: `sync_engine._get_device_contents()` only scans the **root** of the mounted volume ("since Shokz devices expect audio files at the root level," per its own docstring) — there is no folder hierarchy for the device to organize a "book" as a distinct unit within, and no evidence (from the Shokz help center or FCC filing reviewed earlier) that the device tracks or exposes a per-file resume position to a host computer. A Shokz help article confirms the device does have *some* on-device playback-order control ("How to switch the MP3 playback order on OpenSwim Pro?"), but that's a global order/shuffle toggle across everything in the flat root directory, not a per-book bookmark. Putting an entire book's chapters onto the device and hoping the device "just handles it" doesn't work today — it would interleave with podcast episodes and playlist files in the same flat namespace with no book grouping, and there's nothing to resume from on SwimSync's next sync. The Shokz app remains the right tool for on-device playback controls (skip, order, volume) — just not for progress bookkeeping, which has to live in SwimSync per option 2.
+
+**Sync engine integration:** A new `_actions_from_audiobook_flows()` alongside the existing `_actions_from_flows()`, producing `SyncAction`s for the computed chapter window. Filenames written to the device must be **zero-padded and book-prefixed** (e.g. `mybook_ch003.mp3`, not `mybook_ch3.mp3`) — a direct consequence of the flat-root, alphabetically-ordered-by-default constraint above: without deliberate padding, chapter 10 would sort before chapter 2 on the device. Priority relative to existing playlist/flow items (Requirements §6) is an open UX question worth deciding deliberately rather than defaulting silently — audiobook chapters probably belong between playlist items and podcast-flow items in priority, but this should be a conscious design choice, not an accident of implementation order.
+
+**UI:** A new "Audiobooks" sidebar section, architecturally parallel to Podcasts + Episode Browser + Flows (reusing the same tile-list/detail-view/config-dialog patterns already established in `podcasts_view.py`, `episode_browser.py`, `flows_view.py`) — import a folder, see chapter list with durations, mark progress, configure how many chapters ahead to keep on the device.
+
+**Key tradeoffs:**
+- Manual progress marking is the only reliable mechanism on current hardware — this is a real, if modest, UX burden compared to the "it just knows" experience the user described wanting; it should be made as low-friction as possible (a simple stepper/slider "I'm on chapter N," not a per-chapter checklist for a 40-chapter book).
+- Filename-based ordering is a real constraint, not an implementation detail to gloss over — getting it wrong silently produces out-of-order playback with no error, which would be a confusing failure mode for users to debug.
+- This is entirely new data-model surface (`Audiobook`, `Chapter`, `AudiobookFlow`), not a repurposing of `Podcast`/`Flow`, since forcing the fixed/finite/sequential shape of a book into the open-ended/recency-based shape of a podcast flow would produce awkward, leaky abstractions in both directions.
+
+**Estimated scope:** Medium — comparable to building one of the existing UI views plus a new sync-engine code path; smaller than the mobile or cloud efforts discussed elsewhere in this roadmap, since it's additive to the existing desktop architecture rather than a new platform.
+
+**Prerequisites:** None beyond the user already having DRM-free chapter files in hand — this feature does not include, and should never grow to include, any mechanism for acquiring or decrypting commercial audiobook content.
+
+---
+
 ## Deferred to v2
 
 Items from the original requirements document deferred out of v1 scope:
@@ -399,5 +436,5 @@ Items from the original requirements document deferred out of v1 scope:
 - **Launch at login / menu bar presence** — background daemon with menu bar icon
 - **iCloud profile sync** — sync profiles across multiple Macs automatically
 - **Smart playlists** — rule-based playlists (e.g. "unlistened episodes under 30 minutes")
-- **Audiobook support** — chapter-aware handling for audiobooks
-- **Automatic episode marking** — treat a file deleted from the device as "listened"
+- **Audiobook support** — chapter-aware handling for audiobooks; see the full analysis under "Under consideration" above
+- **Automatic episode marking** — treat a file deleted from the device as "listened"; ruled out as unreliable in the audiobook-support analysis above (the same hardware/firmware ceiling applies to podcast episodes too)
